@@ -1,0 +1,10 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen/schemas
+*.log
+.DS_Store
+# engine checkout (clone separately: https://github.com/deepseek-ai/deepseek-harness)
+deepseek-harness/
+# e2e test artifacts
+e2e-artifacts/
