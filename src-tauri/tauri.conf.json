@@ -38,6 +38,11 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "DeepSeek Harness desktop app",
-    "longDescription": "Tauri desktop shell for the DeepSeek Harness agent harness: runs the dsh web engine locally and embeds its Web UI."
+    "longDescription": "Tauri desktop shell for the DeepSeek Harness agent harness: runs the dsh web engine locally and embeds its Web UI.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

@@ -68,6 +68,12 @@ on Windows).
 npm run tauri build   # produces NSIS/MSI installers under src-tauri/target/release/bundle
 ```
 
+The NSIS installer is per-user (no admin required). The MSI is a per-machine
+package: install it from an elevated prompt, or force a per-user install with
+`msiexec /i "DeepSeek Harness_0.1.0_x64_en-US.msi" ALLUSERS=2 MSIINSTALLPERUSER=1`.
+Both installers were smoke-tested (silent install, app launch, engine boot,
+graceful and hard-kill cleanup, uninstall).
+
 The packaged app has no bundled engine: without `DSH_ENGINE_DIR` or a saved engine
 directory it uses the published `@deepseek-ai/dsh` package via npx (requires network on
 first start). To ship a self-contained build, install the harness into a directory and set
