@@ -1,0 +1,91 @@
+name: Build Installers
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: --bundles nsis,msi
+            artifact_paths: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+          - platform: macos-latest
+            # Universal: 一个 dmg 同时支持 Intel 和 Apple Silicon
+            args: --bundles app,dmg --target universal-apple-darwin
+            artifact_paths: |
+              src-tauri/target/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ---- 普通 push 到 main：只构建，产物作为 workflow artifacts 留存 ----
+      - name: Build installers (branch push)
+        if: github.ref_type == 'branch'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+
+      - name: Upload installers as workflow artifacts
+        if: github.ref_type == 'branch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+
+      # ---- push v* tag：构建并发布 GitHub Release（草稿） ----
+      - name: Build and publish GitHub Release (tag push)
+        if: github.ref_type == 'tag'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: DeepSeek Harness ${{ github.ref_name }}
+          releaseDraft: true
+          releaseBody: |
+            ## DeepSeek Harness ${{ github.ref_name }}
+
+            - **Windows**: `.exe`（NSIS 安装包）/ `.msi`（MSI 安装包）
+            - **macOS**: `.dmg`（Universal，Intel + Apple Silicon 通用）
+
+            > 注意：安装包暂未做代码签名。Windows SmartScreen 和 macOS Gatekeeper
+            > 首次运行时可能提示"未知发布者/无法验证开发者"，需手动放行。
+          args: ${{ matrix.args }}
