@@ -17,9 +17,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let shell_settings = settings::load(app.handle());
-            // The splash page URL is captured before any navigation so the
-            // shell can always return to it when the engine stops.
-            let splash_url = app.get_webview_window("main").and_then(|window| window.url().ok());
+            // The shell must always be able to return to the splash page
+            // when the engine stops. The webview's own URL is not usable at
+            // setup time (the page has not loaded yet, so it reads
+            // about:blank), therefore the splash URL is constructed from the
+            // known local origins instead; a captured value is only a fallback.
+            let splash_url = resolve_splash_url(app.handle());
             let engine = EngineManager::new(app.handle().clone(), shell_settings, splash_url);
             app.manage(ManagedEngine(Arc::clone(&engine)));
             let _ = engine.start();
@@ -75,4 +78,28 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// Resolve the local splash page URL: the captured webview URL when it is
+/// already meaningful, otherwise the dev server URL in dev builds and the
+/// embedded-assets origin in release builds.
+fn resolve_splash_url(app: &tauri::AppHandle) -> Option<url::Url> {
+    let captured = app
+        .get_webview_window("main")
+        .and_then(|window| window.url().ok())
+        .filter(|u| u.as_str() != "about:blank");
+    if captured.is_some() {
+        return captured;
+    }
+    if tauri::is_dev() {
+        return app.config().build.dev_url.clone();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        url::Url::parse("http://tauri.localhost").ok()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        url::Url::parse("tauri://localhost").ok()
+    }
 }

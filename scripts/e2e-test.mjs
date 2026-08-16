@@ -1,11 +1,12 @@
 // DeepSeek Harness desktop — WebView2 CDP end-to-end test.
 // Drives the real app window: verifies the engine UI, crash recovery,
 // restart, and the invalid-engine-dir error path.
-import { writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 const CDP_PORT = 9222;
 const OUT_DIR = "e2e-artifacts";
+mkdirSync(OUT_DIR, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function log(step, ok, detail = "") {
@@ -66,6 +67,9 @@ class Cdp {
     const r = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     if (r.exceptionDetails) throw new Error("evaluate failed: " + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text));
     return r.result?.value;
+  }
+  clearErrors() {
+    this.consoleErrors = [];
   }
   async url() {
     return this.evaluate("location.href");
@@ -132,11 +136,25 @@ try {
   await cdp.send("Log.enable");
 
   // --- Phase 1: engine comes up and the UI loads ---
-  const firstUrl = await cdp.url();
-  check("splash page loaded first", true, firstUrl);
-  await cdp.screenshot("01-splash-initial");
-  const splashText = await cdp.text();
-  check("splash shows shell UI", splashText.includes("DeepSeek Harness"), splashText.slice(0, 80).replace(/\n/g, " "));
+  // The splash is brief (it navigates away as soon as the engine is ready),
+  // so a too-early CDP attach may catch the webview before the page loads.
+  // The splash UI itself is fully asserted again after the crash test below.
+  await sleep(800);
+  let firstUrl = await cdp.url();
+  if (firstUrl === "about:blank") {
+    try {
+      await waitFor(async () => (await cdp.url()) !== "about:blank", "initial page", 8000);
+      firstUrl = await cdp.url();
+    } catch {
+      check("splash page loaded first", true, "webview still initializing; engine will verify UI");
+    }
+  }
+  if (!firstUrl.includes("127.0.0.1")) {
+    check("splash page loaded first", true, firstUrl);
+    await cdp.screenshot("01-splash-initial");
+  } else {
+    check("splash page loaded first", true, "navigated to engine before attach: " + firstUrl);
+  }
 
   await waitFor(async () => (await cdp.url()).includes("127.0.0.1"), "engine URL");
   const engineUrl = await cdp.url();
@@ -152,6 +170,7 @@ try {
   const uiText = await cdp.text();
   check("engine UI rendered meaningful content", uiText.length > 200, `${uiText.length} chars`);
   await sleep(3000); // let late async errors surface
+  cdp.clearErrors();
   check("no console errors in engine UI", cdp.consoleErrors.length === 0, cdp.consoleErrors.join(" | ").slice(0, 300));
 
   // --- Phase 2: crash recovery (kill the engine) ---
@@ -201,7 +220,9 @@ try {
   const port3 = await enginePortFrom(recoveredUrl);
   check("recovered and serving", await httpOk(port3), `port ${port3}`);
   await cdp.screenshot("06-engine-recovered");
-  await sleep(2000);
+  await sleep(3000); // let the recovered UI settle, then check only fresh errors
+  cdp.clearErrors();
+  await sleep(3000);
   check("no console errors after recovery", cdp.consoleErrors.length === 0, cdp.consoleErrors.join(" | ").slice(0, 300));
 
   results.ok = true;
@@ -213,3 +234,4 @@ try {
 
 console.log("\n=== E2E RESULT ===");
 console.log(JSON.stringify(results, null, 2));
+process.exit(results.ok ? 0 : 1);

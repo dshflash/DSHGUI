@@ -606,6 +606,10 @@ impl EngineManager {
             inner.exit_code = exit_code;
             result
         };
+        self.debug_log(&format!(
+            "[dsh-desktop] engine exited (code {:?}), back_to_splash={back_to_splash}",
+            exit_code
+        ));
         let view = self.snapshot();
         let _ = self.app.emit(EVENT_STATE, view);
         if back_to_splash {
@@ -654,10 +658,19 @@ impl EngineManager {
 
     fn navigate_splash(&self) {
         let url = self.splash_url.lock().unwrap().clone();
-        if let Some(url) = url {
-            if let Some(window) = self.app.get_webview_window("main") {
-                let _ = window.navigate(url);
+        match url {
+            Some(url) => {
+                self.debug_log(&format!("[dsh-desktop] navigating back to splash {url}"));
+                if let Some(window) = self.app.get_webview_window("main") {
+                    match window.navigate(url) {
+                        Ok(()) => self.debug_log("[dsh-desktop] splash navigate ok"),
+                        Err(e) => self.debug_log(&format!("[dsh-desktop] splash navigate error: {e}")),
+                    }
+                } else {
+                    self.debug_log("[dsh-desktop] main window missing for splash navigation");
+                }
             }
+            None => self.debug_log("[dsh-desktop] no captured splash URL; cannot navigate back"),
         }
     }
 }
