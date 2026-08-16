@@ -70,7 +70,7 @@ jobs:
           path: ${{ matrix.artifact_paths }}
           if-no-files-found: error
 
-      # ---- push v* tag：构建并发布 GitHub Release（草稿） ----
+      # ---- push v* tag：构建并自动发布 GitHub Release ----
       - name: Build and publish GitHub Release (tag push)
         if: github.ref_type == 'tag'
         uses: tauri-apps/tauri-action@v0
@@ -79,7 +79,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: DeepSeek Harness ${{ github.ref_name }}
-          releaseDraft: true
+          releaseDraft: false
           releaseBody: |
             ## DeepSeek Harness ${{ github.ref_name }}
 
